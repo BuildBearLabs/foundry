@@ -8,6 +8,7 @@ use revm::{
     primitives::{Account, AccountInfo, Bytecode, HashMap as Map},
     Database, DatabaseCommit,
 };
+use serde::{Deserialize, Serialize};
 
 /// Type alias for an in-memory database.
 ///
@@ -93,7 +94,8 @@ impl DatabaseCommit for MemDb {
 /// To prevent this, we ensure that a missing account is never marked as `NotExisting` by always
 /// returning `Some` with this type, which will then insert a default [`AccountInfo`] instead
 /// of one marked as `AccountState::NotExisting`.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct EmptyDBWrapper(EmptyDB);
 
 impl DatabaseRef for EmptyDBWrapper {
