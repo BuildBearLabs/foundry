@@ -6,6 +6,7 @@ use eyre::Result;
 use foundry_common::evm::Breakpoints;
 use foundry_config::FuzzConfig;
 use foundry_evm_core::{
+    backend::BackendDatabaseSnapshot,
     constants::{MAGIC_ASSUME, TEST_TIMEOUT},
     decode::{RevertDecoder, SkipReason},
 };
@@ -245,7 +246,7 @@ impl FuzzedExecutor {
 
         // Handle `vm.assume`.
         if call.result.as_ref() == MAGIC_ASSUME {
-            return Err(TestCaseError::reject(FuzzError::AssumeReject))
+            return Err(TestCaseError::reject(FuzzError::AssumeReject));
         }
 
         let (breakpoints, deprecated_cheatcodes) =
@@ -264,6 +265,55 @@ impl FuzzedExecutor {
                 deprecated_cheatcodes,
             }))
         } else {
+            let mut result = String::new();
+            let export = self.executor.backend().create_db_snapshot();
+            if let BackendDatabaseSnapshot::InMemory(mem) = export {
+                #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+                pub struct CacheDbOther {
+                    pub accounts:
+                        revm::primitives::HashMap<revm::primitives::Address, revm::db::DbAccount>,
+                    pub contracts: revm::primitives::HashMap<
+                        revm::primitives::B256,
+                        revm::primitives::Bytecode,
+                    >,
+                    pub logs: Vec<revm::primitives::Log>,
+                    pub block_hashes:
+                        revm::primitives::HashMap<revm::primitives::U256, revm::primitives::B256>,
+                }
+
+                result += &format!(
+                    "{}\n",
+                    serde_json::to_string_pretty(&CacheDbOther {
+                        accounts: mem.accounts.clone(),
+                        contracts: mem.contracts.clone(),
+                        logs: mem.logs.clone(),
+                        block_hashes: mem.block_hashes.clone(),
+                    })
+                    .unwrap()
+                );
+
+                for (account, info) in mem.accounts {
+                    result += &format!("{}:\n", account);
+                    if let Some(info) = info.info() {
+                        result += &format!("  balance: {}\n", info.balance);
+                        result += &format!("  nonce: {}\n", info.nonce);
+                        if let Some(code) = info.code {
+                            result += &format!("  code: {}\n", code.bytes());
+                        }
+                    }
+                    result += &format!("  state: {:?}\n", info.account_state);
+                    for (index, value) in info.storage {
+                        result += &format!("  storage[{}]: {}\n", index, value);
+                    }
+                }
+            }
+
+            result += &format!("{} {} {} {}\n\n\n\n", self.sender, address, calldata, should_fail);
+
+            // output to a file
+            let mut file = std::fs::File::create("counterexample.txt").unwrap();
+            std::io::Write::write_all(&mut file, result.as_bytes()).unwrap();
+
             Ok(FuzzOutcome::CounterExample(CounterExampleOutcome {
                 exit_reason: call.exit_reason,
                 counterexample: (calldata, call),
