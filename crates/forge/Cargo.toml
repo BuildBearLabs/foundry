@@ -28,6 +28,9 @@ foundry-wallets.workspace = true
 foundry-linking.workspace = true
 forge-script-sequence.workspace = true
 
+revm.workspace = true
+revm-inspectors.workspace = true
+
 comfy-table.workspace = true
 eyre.workspace = true
 proptest.workspace = true
