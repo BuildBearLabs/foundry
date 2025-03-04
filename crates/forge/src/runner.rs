@@ -16,6 +16,7 @@ use foundry_common::{TestFunctionExt, TestFunctionKind, contracts::ContractsByAd
 use foundry_compilers::utils::canonicalized;
 use foundry_config::{Config, FuzzCorpusConfig};
 use foundry_evm::{
+    backend::BackendDatabaseSnapshot,
     constants::CALLER,
     decode::RevertDecoder,
     executors::{
@@ -40,6 +41,7 @@ use std::{
     cmp::min,
     collections::BTreeMap,
     path::{Path, PathBuf},
+    io::{Read, Write},
     sync::Arc,
     time::Instant,
 };
@@ -551,6 +553,65 @@ impl<'a> FunctionRunner<'a> {
         // Prepare unit test execution.
         if self.prepare_test(func).is_err() {
             return self.result;
+        }
+
+        let mut result = String::new();
+        let export = self.executor.backend().create_db_snapshot();
+        if let BackendDatabaseSnapshot::InMemory(mem) = export {
+            #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+            pub struct CacheDbOther {
+                pub accounts:
+                    revm::primitives::HashMap<revm::primitives::Address, revm::db::DbAccount>,
+                pub contracts:
+                    revm::primitives::HashMap<revm::primitives::B256, revm::primitives::Bytecode>,
+                pub logs: Vec<revm::primitives::Log>,
+                pub block_hashes:
+                    revm::primitives::HashMap<revm::primitives::U256, revm::primitives::B256>,
+            }
+
+            #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+            pub struct Test {
+                pub name: String,
+                pub to: Address,
+                pub from: Address,
+                pub input: Vec<u8>,
+                pub value: U256,
+            }
+
+            #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+            pub struct File {
+                pub db: CacheDbOther,
+                pub test: Test,
+            }
+
+            let db = CacheDbOther {
+                accounts: mem.accounts.clone(),
+                contracts: mem.contracts.clone(),
+                logs: mem.logs.clone(),
+                block_hashes: mem.block_hashes.clone(),
+            };
+            let test = Test {
+                name: func.name.clone(),
+                to: self.address,
+                from: self.sender,
+                input: func.selector().to_vec(),
+                value: U256::ZERO,
+            };
+            let result = File { db, test };
+
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .read(true)
+                .open("example.txt")
+                .unwrap();
+
+            let mut existing = Vec::new();
+            file.read_to_end(&mut existing).unwrap();
+            let mut existing: Vec<File> = serde_json::from_slice(&existing).unwrap();
+            existing.push(result);
+            let result = serde_json::to_vec_pretty(&existing).unwrap();
+            file.write_all(&result).unwrap();
         }
 
         // Run current unit test.

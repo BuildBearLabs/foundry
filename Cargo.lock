@@ -4264,6 +4264,7 @@ dependencies = [
  "reqwest",
  "revm",
  "semver 1.0.27",
+ "revm-inspectors",
  "serde",
  "serde_json",
  "similar",
