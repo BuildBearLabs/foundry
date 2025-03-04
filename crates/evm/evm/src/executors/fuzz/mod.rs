@@ -309,10 +309,14 @@ impl FuzzedExecutor {
                 }
             }
 
-            result += &format!("{} {} {} {}\n\n\n\n", self.sender, address, calldata, should_fail);
+            result += &format!("{} {} {}\n\n\n\n", self.sender, address, calldata);
 
             // output to a file
-            let mut file = std::fs::File::create("counterexample.txt").unwrap();
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("counterexample.txt")
+                .unwrap();
             std::io::Write::write_all(&mut file, result.as_bytes()).unwrap();
 
             Ok(FuzzOutcome::CounterExample(CounterExampleOutcome {
