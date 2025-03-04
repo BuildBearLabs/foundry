@@ -15,6 +15,7 @@ use foundry_common::{contracts::ContractsByAddress, TestFunctionExt, TestFunctio
 use foundry_compilers::utils::canonicalized;
 use foundry_config::{Config, InvariantConfig};
 use foundry_evm::{
+    backend::BackendDatabaseSnapshot,
     constants::CALLER,
     decode::RevertDecoder,
     executors::{
@@ -41,6 +42,7 @@ use std::{
     cmp::min,
     collections::BTreeMap,
     path::{Path, PathBuf},
+    io::{Read, Write},
     sync::Arc,
     time::Instant,
 };
@@ -306,7 +308,7 @@ impl<'a> ContractRunner<'a> {
                 [("setUp()".to_string(), TestResult::fail("multiple setUp functions".to_string()))]
                     .into(),
                 warnings,
-            )
+            );
         }
 
         // Check if `afterInvariant` function with valid signature declared.
@@ -322,7 +324,7 @@ impl<'a> ContractRunner<'a> {
                 )]
                 .into(),
                 warnings,
-            )
+            );
         }
         let call_after_invariant = after_invariant_fns.first().is_some_and(|after_invariant_fn| {
             let match_sig = after_invariant_fn.name == "afterInvariant";
@@ -361,7 +363,7 @@ impl<'a> ContractRunner<'a> {
                 start.elapsed(),
                 [(fail_msg, TestResult::setup_result(setup))].into(),
                 warnings,
-            )
+            );
         }
 
         // Filter out functions sequentially since it's very fast and there is no need to do it
@@ -400,7 +402,7 @@ impl<'a> ContractRunner<'a> {
                 test_fail_instances.join(", ")
             );
             let fail =  TestResult::fail("`testFail*` has been removed. Consider changing to test_Revert[If|When]_Condition and expecting a revert".to_string());
-            return SuiteResult::new(start.elapsed(), [(instances, fail)].into(), warnings)
+            return SuiteResult::new(start.elapsed(), [(instances, fail)].into(), warnings);
         }
 
         let test_results = functions
@@ -537,6 +539,65 @@ impl<'a> FunctionRunner<'a> {
         // Prepare unit test execution.
         if self.prepare_test(func).is_err() {
             return self.result;
+        }
+
+        let mut result = String::new();
+        let export = self.executor.backend().create_db_snapshot();
+        if let BackendDatabaseSnapshot::InMemory(mem) = export {
+            #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+            pub struct CacheDbOther {
+                pub accounts:
+                    revm::primitives::HashMap<revm::primitives::Address, revm::db::DbAccount>,
+                pub contracts:
+                    revm::primitives::HashMap<revm::primitives::B256, revm::primitives::Bytecode>,
+                pub logs: Vec<revm::primitives::Log>,
+                pub block_hashes:
+                    revm::primitives::HashMap<revm::primitives::U256, revm::primitives::B256>,
+            }
+
+            #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+            pub struct Test {
+                pub name: String,
+                pub to: Address,
+                pub from: Address,
+                pub input: Vec<u8>,
+                pub value: U256,
+            }
+
+            #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+            pub struct File {
+                pub db: CacheDbOther,
+                pub test: Test,
+            }
+
+            let db = CacheDbOther {
+                accounts: mem.accounts.clone(),
+                contracts: mem.contracts.clone(),
+                logs: mem.logs.clone(),
+                block_hashes: mem.block_hashes.clone(),
+            };
+            let test = Test {
+                name: func.name.clone(),
+                to: self.address,
+                from: self.sender,
+                input: func.selector().to_vec(),
+                value: U256::ZERO,
+            };
+            let result = File { db, test };
+
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .read(true)
+                .open("example.txt")
+                .unwrap();
+
+            let mut existing = Vec::new();
+            file.read_to_end(&mut existing).unwrap();
+            let mut existing: Vec<File> = serde_json::from_slice(&existing).unwrap();
+            existing.push(result);
+            let result = serde_json::to_vec_pretty(&existing).unwrap();
+            file.write_all(&result).unwrap();
         }
 
         // Run current unit test.
@@ -691,8 +752,8 @@ impl<'a> FunctionRunner<'a> {
         match invariant_result.error {
             // If invariants were broken, replay the error to collect logs and traces
             Some(error) => match error {
-                InvariantFuzzError::BrokenInvariant(case_data) |
-                InvariantFuzzError::Revert(case_data) => {
+                InvariantFuzzError::BrokenInvariant(case_data)
+                | InvariantFuzzError::Revert(case_data) => {
                     // Replay error to create counterexample and to collect logs, traces and
                     // coverage.
                     match replay_error(
@@ -823,8 +884,8 @@ impl<'a> FunctionRunner<'a> {
         let address = self.setup.address;
 
         // Apply before test configured functions (if any).
-        if self.cr.contract.abi.functions().filter(|func| func.name.is_before_test_setup()).count() ==
-            1
+        if self.cr.contract.abi.functions().filter(|func| func.name.is_before_test_setup()).count()
+            == 1
         {
             for calldata in self
                 .executor
