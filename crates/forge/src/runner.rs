@@ -541,7 +541,6 @@ impl<'a> FunctionRunner<'a> {
             return self.result;
         }
 
-        let mut result = String::new();
         let export = self.executor.backend().create_db_snapshot();
         if let BackendDatabaseSnapshot::InMemory(mem) = export {
             #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -587,14 +586,14 @@ impl<'a> FunctionRunner<'a> {
 
             let mut file = std::fs::OpenOptions::new()
                 .create(true)
-                .append(true)
+                .write(true)
                 .read(true)
-                .open("example.txt")
+                .open(format!("bbOut/{}", func.selector()))
                 .unwrap();
 
             let mut existing = Vec::new();
             file.read_to_end(&mut existing).unwrap();
-            let mut existing: Vec<File> = serde_json::from_slice(&existing).unwrap();
+            let mut existing: Vec<File> = serde_json::from_slice(&existing).unwrap_or_default();
             existing.push(result);
             let result = serde_json::to_vec_pretty(&existing).unwrap();
             file.write_all(&result).unwrap();
