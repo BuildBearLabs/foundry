@@ -18,7 +18,11 @@ use foundry_evm_fuzz::{
 use foundry_evm_traces::SparsedTraceArena;
 use indicatif::ProgressBar;
 use proptest::test_runner::{TestCaseError, TestError, TestRunner};
-use std::{cell::RefCell, collections::BTreeMap};
+use std::{
+    cell::RefCell,
+    collections::BTreeMap,
+    io::{Read, Write},
+};
 
 mod types;
 pub use types::{CaseOutcome, CounterExampleOutcome, FuzzOutcome};
@@ -109,7 +113,7 @@ impl FuzzedExecutor {
                 return Err(TestCaseError::fail(TEST_TIMEOUT));
             }
 
-            let fuzz_res = self.single_fuzz(address, calldata)?;
+            let fuzz_res = self.single_fuzz(address, calldata, func)?;
 
             // If running with progress then increment current run.
             if let Some(progress) = progress {
@@ -239,6 +243,7 @@ impl FuzzedExecutor {
         &self,
         address: Address,
         calldata: alloy_primitives::Bytes,
+        func: &Function,
     ) -> Result<FuzzOutcome, TestCaseError> {
         let mut call = self
             .executor
@@ -266,7 +271,6 @@ impl FuzzedExecutor {
                 deprecated_cheatcodes,
             }))
         } else {
-            let mut result = String::new();
             let export = self.executor.backend().create_db_snapshot();
             if let BackendDatabaseSnapshot::InMemory(mem) = export {
                 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -282,42 +286,50 @@ impl FuzzedExecutor {
                         revm::primitives::HashMap<revm::primitives::U256, revm::primitives::B256>,
                 }
 
-                result += &format!(
-                    "{}\n",
-                    serde_json::to_string_pretty(&CacheDbOther {
-                        accounts: mem.accounts.clone(),
-                        contracts: mem.contracts.clone(),
-                        logs: mem.logs.clone(),
-                        block_hashes: mem.block_hashes.clone(),
-                    })
-                    .unwrap()
-                );
-
-                for (account, info) in mem.accounts {
-                    result += &format!("{}:\n", account);
-                    if let Some(info) = info.info() {
-                        result += &format!("  balance: {}\n", info.balance);
-                        result += &format!("  nonce: {}\n", info.nonce);
-                        if let Some(code) = info.code {
-                            result += &format!("  code: {}\n", code.bytes());
-                        }
-                    }
-                    result += &format!("  state: {:?}\n", info.account_state);
-                    for (index, value) in info.storage {
-                        result += &format!("  storage[{}]: {}\n", index, value);
-                    }
+                #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+                pub struct Test {
+                    pub name: String,
+                    pub to: Address,
+                    pub from: Address,
+                    pub input: Vec<u8>,
+                    pub value: U256,
                 }
+
+                #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+                pub struct File {
+                    pub db: CacheDbOther,
+                    pub test: Test,
+                }
+
+                let db = CacheDbOther {
+                    accounts: mem.accounts.clone(),
+                    contracts: mem.contracts.clone(),
+                    logs: mem.logs.clone(),
+                    block_hashes: mem.block_hashes.clone(),
+                };
+                let test = Test {
+                    name: func.name.clone(),
+                    to: address,
+                    from: self.sender,
+                    input: calldata.to_vec(),
+                    value: U256::ZERO,
+                };
+                let result = File { db, test };
+
+                let mut file = std::fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .read(true)
+                    .open(format!("bbOut/{}", func.selector()))
+                    .unwrap();
+
+                let mut existing = Vec::new();
+                file.read_to_end(&mut existing).unwrap();
+                let mut existing: Vec<File> = serde_json::from_slice(&existing).unwrap_or_default();
+                existing.push(result);
+                let result = serde_json::to_vec_pretty(&existing).unwrap();
+                file.write_all(&result).unwrap();
             }
-
-            result += &format!("{} {} {}\n\n\n\n", self.sender, address, calldata);
-
-            // output to a file
-            let mut file = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open("counterexample.txt")
-                .unwrap();
-            std::io::Write::write_all(&mut file, result.as_bytes()).unwrap();
 
             Ok(FuzzOutcome::CounterExample(CounterExampleOutcome {
                 exit_reason: call.exit_reason,

@@ -521,13 +521,6 @@ impl TestResult {
         reason: Option<String>,
         raw_call_result: RawCallResult,
     ) {
-        println!(
-            "Success: {}, Reason: {}, {:?}",
-            success,
-            reason.clone().unwrap_or_default(),
-            raw_call_result
-        );
-
         self.kind =
             TestKind::Unit { gas: raw_call_result.gas_used.wrapping_sub(raw_call_result.stipend) };
 
