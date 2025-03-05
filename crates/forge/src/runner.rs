@@ -555,15 +555,14 @@ impl<'a> FunctionRunner<'a> {
             return self.result;
         }
 
-        let mut result = String::new();
         let export = self.executor.backend().create_db_snapshot();
         if let BackendDatabaseSnapshot::InMemory(mem) = export {
             #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
             pub struct CacheDbOther {
                 pub accounts:
-                    revm::primitives::HashMap<revm::primitives::Address, revm::db::DbAccount>,
+                    revm::primitives::HashMap<revm::primitives::Address, revm::database::DbAccount>,
                 pub contracts:
-                    revm::primitives::HashMap<revm::primitives::B256, revm::primitives::Bytecode>,
+                    revm::primitives::HashMap<revm::primitives::B256, revm::bytecode::Bytecode>,
                 pub logs: Vec<revm::primitives::Log>,
                 pub block_hashes:
                     revm::primitives::HashMap<revm::primitives::U256, revm::primitives::B256>,
@@ -585,10 +584,10 @@ impl<'a> FunctionRunner<'a> {
             }
 
             let db = CacheDbOther {
-                accounts: mem.accounts.clone(),
-                contracts: mem.contracts.clone(),
-                logs: mem.logs.clone(),
-                block_hashes: mem.block_hashes.clone(),
+                accounts: mem.cache.accounts.clone().into_iter().collect(),
+                contracts: mem.cache.contracts.clone().into_iter().collect(),
+                logs: mem.cache.logs.clone(),
+                block_hashes: mem.cache.block_hashes.clone(),
             };
             let test = Test {
                 name: func.name.clone(),
@@ -601,14 +600,14 @@ impl<'a> FunctionRunner<'a> {
 
             let mut file = std::fs::OpenOptions::new()
                 .create(true)
-                .append(true)
+                .write(true)
                 .read(true)
-                .open("example.txt")
+                .open(format!("bbOut/{}", func.selector()))
                 .unwrap();
 
             let mut existing = Vec::new();
             file.read_to_end(&mut existing).unwrap();
-            let mut existing: Vec<File> = serde_json::from_slice(&existing).unwrap();
+            let mut existing: Vec<File> = serde_json::from_slice(&existing).unwrap_or_default();
             existing.push(result);
             let result = serde_json::to_vec_pretty(&existing).unwrap();
             file.write_all(&result).unwrap();

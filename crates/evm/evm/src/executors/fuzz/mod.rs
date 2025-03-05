@@ -9,10 +9,9 @@ use eyre::Result;
 use foundry_common::sh_println;
 use foundry_config::FuzzConfig;
 use foundry_evm_core::{
-    Breakpoints, Breakpoints,
+    Breakpoints,
     backend::BackendDatabaseSnapshot,
     constants::{CHEATCODE_ADDRESS, MAGIC_ASSUME},
-    constants::{CHEATCODE_ADDRESS, MAGIC_ASSUME, TEST_TIMEOUT},
     decode::{RevertDecoder, SkipReason},
 };
 use foundry_evm_coverage::HitMaps;
@@ -30,6 +29,7 @@ use proptest::{
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde_json::json;
 use std::{
+    io::{Read, Write},
     sync::{
         Arc, OnceLock,
         atomic::{AtomicU32, Ordering},
@@ -243,6 +243,7 @@ impl FuzzedExecutor {
         address: Address,
         calldata: Bytes,
         coverage_metrics: &mut WorkerCorpus,
+        func: &Function,
     ) -> Result<FuzzOutcome, TestCaseError> {
         let mut call = executor
             .call_raw(self.sender, address, calldata.clone(), U256::ZERO)
@@ -290,58 +291,65 @@ impl FuzzedExecutor {
                 deprecated_cheatcodes,
             }))
         } else {
-            let mut result = String::new();
-            let export = self.executor.backend().create_db_snapshot();
+            let export = self.executor_f.backend().create_db_snapshot();
             if let BackendDatabaseSnapshot::InMemory(mem) = export {
                 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
                 pub struct CacheDbOther {
-                    pub accounts:
-                        revm::primitives::HashMap<revm::primitives::Address, revm::db::DbAccount>,
-                    pub contracts: revm::primitives::HashMap<
-                        revm::primitives::B256,
-                        revm::primitives::Bytecode,
+                    pub accounts: revm::primitives::HashMap<
+                        revm::primitives::Address,
+                        revm::database::DbAccount,
                     >,
+                    pub contracts:
+                        revm::primitives::HashMap<revm::primitives::B256, revm::bytecode::Bytecode>,
                     pub logs: Vec<revm::primitives::Log>,
                     pub block_hashes:
                         revm::primitives::HashMap<revm::primitives::U256, revm::primitives::B256>,
                 }
 
-                result += &format!(
-                    "{}\n",
-                    serde_json::to_string_pretty(&CacheDbOther {
-                        accounts: mem.accounts.clone(),
-                        contracts: mem.contracts.clone(),
-                        logs: mem.logs.clone(),
-                        block_hashes: mem.block_hashes.clone(),
-                    })
-                    .unwrap()
-                );
-
-                for (account, info) in mem.accounts {
-                    result += &format!("{}:\n", account);
-                    if let Some(info) = info.info() {
-                        result += &format!("  balance: {}\n", info.balance);
-                        result += &format!("  nonce: {}\n", info.nonce);
-                        if let Some(code) = info.code {
-                            result += &format!("  code: {}\n", code.bytes());
-                        }
-                    }
-                    result += &format!("  state: {:?}\n", info.account_state);
-                    for (index, value) in info.storage {
-                        result += &format!("  storage[{}]: {}\n", index, value);
-                    }
+                #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+                pub struct Test {
+                    pub name: String,
+                    pub to: Address,
+                    pub from: Address,
+                    pub input: Vec<u8>,
+                    pub value: U256,
                 }
+
+                #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+                pub struct File {
+                    pub db: CacheDbOther,
+                    pub test: Test,
+                }
+
+                let db = CacheDbOther {
+                    accounts: mem.cache.accounts.clone().into_iter().collect(),
+                    contracts: mem.cache.contracts.clone().into_iter().collect(),
+                    logs: mem.cache.logs.clone(),
+                    block_hashes: mem.cache.block_hashes.clone(),
+                };
+                let test = Test {
+                    name: func.name.clone(),
+                    to: address,
+                    from: self.sender,
+                    input: calldata.to_vec(),
+                    value: U256::ZERO,
+                };
+                let result = File { db, test };
+
+                let mut file = std::fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .read(true)
+                    .open(format!("bbOut/{}", func.selector()))
+                    .unwrap();
+
+                let mut existing = Vec::new();
+                file.read_to_end(&mut existing).unwrap();
+                let mut existing: Vec<File> = serde_json::from_slice(&existing).unwrap_or_default();
+                existing.push(result);
+                let result = serde_json::to_vec_pretty(&existing).unwrap();
+                file.write_all(&result).unwrap();
             }
-
-            result += &format!("{} {} {}\n\n\n\n", self.sender, address, calldata);
-
-            // output to a file
-            let mut file = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open("counterexample.txt")
-                .unwrap();
-            std::io::Write::write_all(&mut file, result.as_bytes()).unwrap();
 
             Ok(FuzzOutcome::CounterExample(CounterExampleOutcome {
                 exit_reason: call.exit_reason,
@@ -578,7 +586,7 @@ impl FuzzedExecutor {
             };
 
             worker.last_run_timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
-            match self.single_fuzz(&executor, address, input, &mut corpus) {
+            match self.single_fuzz(&executor, address, input, &mut corpus, func) {
                 Ok(fuzz_outcome) => match fuzz_outcome {
                     FuzzOutcome::Case(case) => {
                         let total_runs = inc_runs();
