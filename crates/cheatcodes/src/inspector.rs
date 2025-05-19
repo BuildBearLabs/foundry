@@ -2404,6 +2404,7 @@ fn apply_dispatch(
     let cheat = calls_as_dyn_cheatcode(calls);
 
     let _guard = debug_span!(target: "cheatcodes", "apply", id = %cheat.id()).entered();
+    println!("{}", cheat.id());
     trace!(target: "cheatcodes", cheat = ?cheat.as_debug(), "applying");
 
     if let spec::Status::Deprecated(replacement) = *cheat.status() {
