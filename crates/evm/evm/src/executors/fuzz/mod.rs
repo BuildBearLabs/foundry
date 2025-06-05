@@ -29,7 +29,7 @@ use proptest::{
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde_json::json;
 use std::{
-    io::{Read, Write},
+    io::{Read, Seek, SeekFrom, Write},
     sync::{
         Arc, OnceLock,
         atomic::{AtomicU32, Ordering},
@@ -348,6 +348,8 @@ impl FuzzedExecutor {
                 let mut existing: Vec<File> = serde_json::from_slice(&existing).unwrap_or_default();
                 existing.push(result);
                 let result = serde_json::to_vec_pretty(&existing).unwrap();
+                file.seek(SeekFrom::Start(0)).unwrap();
+                file.set_len(0).unwrap();
                 file.write_all(&result).unwrap();
             }
 
