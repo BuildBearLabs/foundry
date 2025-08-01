@@ -598,6 +598,8 @@ impl<'a> FunctionRunner<'a> {
             };
             let result = File { db, test };
 
+            std::fs::create_dir_all("bbOut").unwrap();
+
             let mut file = std::fs::OpenOptions::new()
                 .create(true)
                 .write(true)
@@ -609,7 +611,7 @@ impl<'a> FunctionRunner<'a> {
             file.read_to_end(&mut existing).unwrap();
             let mut existing: Vec<File> = serde_json::from_slice(&existing).unwrap_or_default();
             existing.push(result);
-            let result = serde_json::to_vec_pretty(&existing).unwrap();
+            let result = serde_json::to_vec(&existing).unwrap();
             file.seek(SeekFrom::Start(0)).unwrap();
             file.set_len(0).unwrap();
             file.write_all(&result).unwrap();

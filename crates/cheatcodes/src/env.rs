@@ -287,13 +287,50 @@ fn env_array_default<T: SolValue>(key: &str, delim: &str, default: &T, ty: &DynS
 }
 
 fn get_env(key: &str) -> Result<String> {
-    match env::var(key) {
+    let result = match env::var(key) {
         Ok(val) => Ok(val),
         Err(env::VarError::NotPresent) => Err(fmt_err!("environment variable {key:?} not found")),
         Err(env::VarError::NotUnicode(s)) => {
             Err(fmt_err!("environment variable {key:?} was not valid unicode: {s:?}"))
         }
+    };
+
+    if let Ok(val) = result.as_ref() {
+        let hash = {
+            use std::hash::{DefaultHasher, Hash, Hasher};
+
+            let mut hasher = DefaultHasher::new();
+            key.hash(&mut hasher);
+            hasher.finish()
+        };
+
+        #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+        pub struct Env {
+            pub key: String,
+            pub value: String,
+        }
+
+        let result = Env { key: key.to_string(), value: val.clone() };
+        let result = serde_json::to_vec(&result).unwrap();
+
+        std::fs::create_dir_all("bbOut/env").unwrap();
+
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(format!("bbOut/env/{}", hash))
+            .unwrap();
+
+        {
+            use std::io::{Seek, SeekFrom, Write};
+
+            file.seek(SeekFrom::Start(0)).unwrap();
+            file.set_len(0).unwrap();
+            file.write_all(&result).unwrap();
+        }
     }
+
+    result
 }
 
 /// Converts the error message of a failed parsing attempt to a more user-friendly message that
