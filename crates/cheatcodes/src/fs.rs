@@ -148,8 +148,9 @@ impl Cheatcode for readDir_2Call {
 impl Cheatcode for readFileCall {
     fn apply(&self, state: &mut Cheatcodes) -> Result {
         let Self { path } = self;
+        let original_path = path.clone();
         let path = state.config.ensure_path_allowed(path, FsAccessKind::Read)?;
-        Ok(fs::read_to_string(path)?.abi_encode())
+        Ok(fs::read_to_string_with_output(path, original_path)?.abi_encode())
     }
 }
 
@@ -402,6 +403,7 @@ fn deploy_code(
 /// - `ContractName`
 /// - `ContractName:0.8.23`
 fn get_artifact_code(state: &Cheatcodes, path: &str, deployed: bool) -> Result<Bytes> {
+    let original_path = path.to_string();
     let path = if path.ends_with(".json") {
         PathBuf::from(path)
     } else {
@@ -524,7 +526,7 @@ fn get_artifact_code(state: &Cheatcodes, path: &str, deployed: bool) -> Result<B
     };
 
     let path = state.config.ensure_path_allowed(path, FsAccessKind::Read)?;
-    let data = fs::read_to_string(path)?;
+    let data = fs::read_to_string_with_output(path, original_path)?;
     let artifact = serde_json::from_str::<ContractObject>(&data)?;
     let maybe_bytecode = if deployed { artifact.deployed_bytecode } else { artifact.bytecode };
     maybe_bytecode.ok_or_else(|| fmt_err!("no bytecode for contract; is it abstract or unlinked?"))

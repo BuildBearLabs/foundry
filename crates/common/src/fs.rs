@@ -4,7 +4,7 @@ use crate::errors::FsPathError;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
     fs::{self, File},
-    io::{BufWriter, Write},
+    io::{BufWriter, Seek, SeekFrom, Write},
     path::{Component, Path, PathBuf},
 };
 
@@ -39,6 +39,44 @@ pub fn read_link(path: impl AsRef<Path>) -> Result<PathBuf> {
 pub fn read_to_string(path: impl AsRef<Path>) -> Result<String> {
     let path = path.as_ref();
     fs::read_to_string(path).map_err(|err| FsPathError::read(err, path))
+}
+
+pub fn read_to_string_with_output(path: impl AsRef<Path>, original_path: String) -> Result<String> {
+    let path = path.as_ref();
+    let result = fs::read_to_string(path).map_err(|err| FsPathError::read(err, path));
+
+    if let Ok(file) = result.as_ref() {
+        let hash = {
+            use std::hash::{DefaultHasher, Hash, Hasher};
+
+            let mut hasher = DefaultHasher::new();
+            original_path.hash(&mut hasher);
+            hasher.finish()
+        };
+
+        #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+        pub struct File {
+            pub name: String,
+            pub contents: String,
+        }
+
+        let result = File { name: original_path, contents: file.clone() };
+        let result = serde_json::to_vec(&result).unwrap();
+
+        std::fs::create_dir_all("bbOut/fs").unwrap();
+
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(format!("bbOut/fs/{}", hash))
+            .unwrap();
+
+        file.seek(SeekFrom::Start(0)).unwrap();
+        file.set_len(0).unwrap();
+        file.write_all(&result).unwrap();
+    }
+
+    result
 }
 
 /// Reads the JSON file and deserialize it into the provided type.
