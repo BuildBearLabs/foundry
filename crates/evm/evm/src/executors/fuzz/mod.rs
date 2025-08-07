@@ -23,6 +23,7 @@ use std::{
     collections::BTreeMap,
     io::{Read, Seek, SeekFrom, Write},
 };
+use uuid::Uuid;
 
 mod types;
 pub use types::{CaseOutcome, CounterExampleOutcome, FuzzOutcome};
@@ -321,7 +322,7 @@ impl FuzzedExecutor {
                     .create(true)
                     .write(true)
                     .read(true)
-                    .open(format!("bbOut/{}", func.selector()))
+                    .open(format!("bbOut/{}", Uuid::new_v4()))
                     .unwrap();
 
                 let mut existing = Vec::new();

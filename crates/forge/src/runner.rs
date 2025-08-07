@@ -47,6 +47,7 @@ use std::{
     time::Instant,
 };
 use tracing::Span;
+use uuid::Uuid;
 
 /// When running tests, we deploy all external libraries present in the project. To avoid additional
 /// libraries affecting nonces of senders used in tests, we are using separate address to
@@ -590,7 +591,7 @@ impl<'a> FunctionRunner<'a> {
                 .create(true)
                 .write(true)
                 .read(true)
-                .open(format!("bbOut/{}", func.selector()))
+                .open(format!("bbOut/{}", Uuid::new_v4()))
                 .unwrap();
 
             let mut existing = Vec::new();
