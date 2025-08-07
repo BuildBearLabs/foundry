@@ -4279,6 +4279,7 @@ dependencies = [
  "toml_edit 0.23.7",
  "tower-http",
  "tracing",
+ "uuid 1.18.1",
  "watchexec",
  "watchexec-events",
  "watchexec-signals",

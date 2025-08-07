@@ -87,6 +87,12 @@ toml_edit.workspace = true
 watchexec = "8.0"
 watchexec-events = "6.0"
 watchexec-signals = "5.0"
+toml = { workspace = true, features = ["preserve_order"] }
+toml_edit = "0.22"
+uuid.workspace = true
+watchexec = "6.0"
+watchexec-events = "5.0"
+watchexec-signals = "4.0"
 clearscreen = "4.0"
 evm-disassembler.workspace = true
 path-slash.workspace = true
