@@ -1591,7 +1591,7 @@ pub enum BackendDatabaseSnapshot {
 /// Represents a fork
 #[derive(Clone, Debug)]
 pub struct Fork {
-    db: ForkDB,
+    pub db: ForkDB,
     journaled_state: JournaledState,
 }
 
