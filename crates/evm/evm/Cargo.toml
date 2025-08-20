@@ -51,5 +51,3 @@ thiserror.workspace = true
 tracing.workspace = true
 indicatif.workspace = true
 serde.workspace = true
-serde_json.workspace = true
-uuid.workspace = true

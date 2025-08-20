@@ -33,6 +33,7 @@ pub use inspector::Fuzzer;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[expect(clippy::large_enum_variant)]
+#[serde(tag = "type", content = "details", rename_all = "lowercase")]
 pub enum CounterExample {
     /// Call used as a counter example for fuzz tests.
     Single(BaseCounterExample),
@@ -152,7 +153,7 @@ impl fmt::Display for BaseCounterExample {
                     args
                 )?;
 
-                return Ok(())
+                return Ok(());
             }
         }
 
