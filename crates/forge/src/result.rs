@@ -6,12 +6,13 @@ use crate::{
     gas_report::GasReport,
 };
 use alloy_primitives::{
-    Address, Log,
+    Address, Log, U256,
     map::{AddressHashMap, HashMap},
 };
 use eyre::Report;
 use foundry_common::{get_contract_name, get_file_name, shell};
 use foundry_evm::{
+    backend::BackendDatabaseSnapshot,
     core::Breakpoints,
     coverage::HitMaps,
     decode::SkipReason,
@@ -21,7 +22,7 @@ use foundry_evm::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, HashMap as Map},
+    collections::{BTreeMap, HashMap as Map, HashSet as Set},
     fmt::{self, Write},
     time::Duration,
 };
@@ -356,6 +357,7 @@ impl SuiteTestResult {
 
 /// The status of a test.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum TestStatus {
     Success,
     #[default]
@@ -439,6 +441,94 @@ pub struct TestResult {
     /// Deprecated cheatcodes (mapped to their replacements, if any) used in current test.
     #[serde(skip)]
     pub deprecated_cheatcodes: HashMap<&'static str, Option<&'static str>>,
+
+    /// Db before access
+    #[serde(skip)]
+    pub db: CacheDbOther,
+
+    /// If a unit test is being executed
+    #[serde(skip)]
+    pub test: Option<Test>,
+
+    /// Cheatcodes accessed
+    #[serde(skip)]
+    pub cheatcodes: Set<String>,
+    /// Files accessed
+    #[serde(skip)]
+    pub files: Map<String, String>,
+    /// Envs accessed
+    #[serde(skip)]
+    pub envs: Map<String, String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize)]
+pub struct CacheDbOther {
+    pub accounts: BTreeMap<revm::primitives::Address, DbAccountOther>,
+    pub contracts: BTreeMap<revm::primitives::B256, revm::bytecode::Bytecode>,
+    pub logs: Vec<revm::primitives::Log>,
+    pub block_hashes: BTreeMap<revm::primitives::U256, revm::primitives::B256>,
+    pub fork: Option<ForkOther>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize)]
+pub struct DbAccountOther {
+    pub info: revm::state::AccountInfo,
+    pub account_state: revm::database::AccountState,
+    pub storage: BTreeMap<U256, U256>,
+}
+
+impl From<revm::database::DbAccount> for DbAccountOther {
+    fn from(account: revm::database::DbAccount) -> Self {
+        Self {
+            info: account.info,
+            account_state: account.account_state,
+            storage: account.storage.into_iter().collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize)]
+pub struct ForkOther {
+    pub url: String,
+    pub block_number: Option<u64>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct Test {
+    pub from: Address,
+    pub to: Address,
+    pub input: Vec<u8>,
+    pub value: U256,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct TestPrint {
+    pub contract_name: String,
+    pub name: String,
+    pub status: TestStatus,
+    pub kind: TestKind,
+    pub test: Option<Test>,
+    pub reason: Option<String>,
+    pub counterexample: Option<CounterExample>,
+    pub logs: Vec<Log>,
+    pub decoded_logs: Vec<String>,
+    pub cheatcodes: Set<String>,
+    pub files: Set<String>,
+    pub envs: Set<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct DbPrint {
+    pub db: CacheDbOther,
+    pub tests: Vec<TestPrint>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct ResultPrint {
+    pub data: Vec<DbPrint>,
+    pub cheatcodes: Set<String>,
+    pub files: Map<String, String>,
+    pub envs: Map<String, String>,
 }
 
 impl fmt::Display for TestResult {
@@ -756,6 +846,63 @@ impl TestResult {
     pub fn merge_coverages(&mut self, other_coverage: Option<HitMaps>) {
         HitMaps::merge_opt(&mut self.line_coverage, other_coverage);
     }
+
+    pub fn add_db_snapshot(&mut self, snapshot: BackendDatabaseSnapshot) {
+        match snapshot {
+            BackendDatabaseSnapshot::InMemory(cache_db) => {
+                self.db = CacheDbOther {
+                    accounts: cache_db
+                        .cache
+                        .accounts
+                        .into_iter()
+                        .map(|(x, y)| (x, y.into()))
+                        .collect(),
+                    contracts: cache_db.cache.contracts.into_iter().collect(),
+                    logs: cache_db.cache.logs,
+                    block_hashes: cache_db.cache.block_hashes.into_iter().collect(),
+                    fork: None,
+                }
+            }
+            BackendDatabaseSnapshot::Forked(_, fork_id, _, fork) => {
+                let mut fork_data = fork_id.0.split('@');
+                let fork_url = fork_data.next().unwrap_or_default().to_string();
+                let fork_block_number = match fork_data.next() {
+                    Some("latest") | None => None,
+                    Some(x) => u64::from_str_radix(&x[2..], 16).ok(),
+                };
+
+                self.db = CacheDbOther {
+                    accounts: fork
+                        .db
+                        .cache
+                        .accounts
+                        .into_iter()
+                        .map(|(x, y)| (x, y.into()))
+                        .collect(),
+                    contracts: fork.db.cache.contracts.into_iter().collect(),
+                    logs: fork.db.cache.logs,
+                    block_hashes: fork.db.cache.block_hashes.into_iter().collect(),
+                    fork: Some(ForkOther { url: fork_url, block_number: fork_block_number }),
+                }
+            }
+        }
+    }
+
+    pub fn add_test(&mut self, from: Address, to: Address, input: Vec<u8>, value: U256) {
+        self.test = Some(Test { from, to, input, value })
+    }
+
+    pub fn add_cheatcodes(&mut self, cheatcodes: Set<String>) {
+        self.cheatcodes = cheatcodes;
+    }
+
+    pub fn add_files(&mut self, files: Map<String, String>) {
+        self.files = files;
+    }
+
+    pub fn add_envs(&mut self, envs: Map<String, String>) {
+        self.envs = envs;
+    }
 }
 
 /// Data report by a test.
@@ -832,6 +979,12 @@ impl TestKindReport {
 
 /// Various types of tests
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(
+    tag = "type",
+    content = "details",
+    rename_all = "lowercase",
+    rename_all_fields = "lowercase"
+)]
 pub enum TestKind {
     /// A unit test.
     Unit { gas: u64 },

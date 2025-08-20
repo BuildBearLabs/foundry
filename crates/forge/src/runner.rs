@@ -16,7 +16,6 @@ use foundry_common::{TestFunctionExt, TestFunctionKind, contracts::ContractsByAd
 use foundry_compilers::utils::canonicalized;
 use foundry_config::{Config, FuzzCorpusConfig};
 use foundry_evm::{
-    backend::BackendDatabaseSnapshot,
     constants::CALLER,
     decode::RevertDecoder,
     executors::{
@@ -40,14 +39,12 @@ use std::{
     borrow::Cow,
     cmp::min,
     collections::BTreeMap,
-    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::Arc,
     time::Instant,
 };
 use tokio::signal;
 use tracing::Span;
-use uuid::Uuid;
 
 /// When running tests, we deploy all external libraries present in the project. To avoid additional
 /// libraries affecting nonces of senders used in tests, we are using separate address to
@@ -556,67 +553,8 @@ impl<'a> FunctionRunner<'a> {
             return self.result;
         }
 
-        let export = self.executor.backend().create_db_snapshot();
-        if let BackendDatabaseSnapshot::InMemory(mem) = export {
-            #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
-            pub struct CacheDbOther {
-                pub accounts:
-                    revm::primitives::HashMap<revm::primitives::Address, revm::database::DbAccount>,
-                pub contracts:
-                    revm::primitives::HashMap<revm::primitives::B256, revm::bytecode::Bytecode>,
-                pub logs: Vec<revm::primitives::Log>,
-                pub block_hashes:
-                    revm::primitives::HashMap<revm::primitives::U256, revm::primitives::B256>,
-            }
-
-            #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
-            pub struct Test {
-                pub name: String,
-                pub to: Address,
-                pub from: Address,
-                pub input: Vec<u8>,
-                pub value: U256,
-            }
-
-            #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
-            pub struct File {
-                pub db: CacheDbOther,
-                pub test: Test,
-            }
-
-            let db = CacheDbOther {
-                accounts: mem.cache.accounts.clone().into_iter().collect(),
-                contracts: mem.cache.contracts.clone().into_iter().collect(),
-                logs: mem.cache.logs.clone(),
-                block_hashes: mem.cache.block_hashes.clone(),
-            };
-            let test = Test {
-                name: func.name.clone(),
-                to: self.address,
-                from: self.sender,
-                input: func.selector().to_vec(),
-                value: U256::ZERO,
-            };
-            let result = File { db, test };
-
-            std::fs::create_dir_all("bbOut").unwrap();
-
-            let mut file = std::fs::OpenOptions::new()
-                .create(true)
-                .write(true)
-                .read(true)
-                .open(format!("bbOut/{}", Uuid::new_v4()))
-                .unwrap();
-
-            let mut existing = Vec::new();
-            file.read_to_end(&mut existing).unwrap();
-            let mut existing: Vec<File> = serde_json::from_slice(&existing).unwrap_or_default();
-            existing.push(result);
-            let result = serde_json::to_vec(&existing).unwrap();
-            file.seek(SeekFrom::Start(0)).unwrap();
-            file.set_len(0).unwrap();
-            file.write_all(&result).unwrap();
-        }
+        let snapshot = self.executor.backend().create_db_snapshot();
+        self.result.add_db_snapshot(snapshot);
 
         // Run current unit test.
         let (mut raw_call_result, reason) = match self.executor.call(
@@ -641,7 +579,13 @@ impl<'a> FunctionRunner<'a> {
 
         let success =
             self.executor.is_raw_call_mut_success(self.address, &mut raw_call_result, false);
+        if let Some(cheatcodes) = raw_call_result.cheatcodes.as_ref() {
+            self.result.add_cheatcodes(cheatcodes.cheatcodes.clone());
+            self.result.add_files(cheatcodes.files.clone());
+            self.result.add_envs(cheatcodes.envs.clone());
+        }
         self.result.single_result(success, reason, raw_call_result);
+        self.result.add_test(self.sender, self.address, func.selector().to_vec(), U256::ZERO);
         self.result
     }
 
@@ -782,6 +726,9 @@ impl<'a> FunctionRunner<'a> {
         identified_contracts: &ContractsByAddress,
         test_bytecode: &Bytes,
     ) -> TestResult {
+        let snapshot = self.executor.backend().create_db_snapshot();
+        self.result.add_db_snapshot(snapshot);
+
         // First, run the test normally to see if it needs to be skipped.
         if let Err(EvmError::Skip(reason)) = self.executor.call(
             self.sender,
@@ -1046,6 +993,9 @@ impl<'a> FunctionRunner<'a> {
             return self.result;
         }
 
+        let snapshot = self.executor.backend().create_db_snapshot();
+        self.result.add_db_snapshot(snapshot);
+
         let runner = self.fuzz_runner();
         let mut fuzz_config = self.config.fuzz.clone();
         let (failure_dir, failure_file) = test_paths(
@@ -1133,6 +1083,12 @@ impl<'a> FunctionRunner<'a> {
                     U256::ZERO,
                 ) {
                     Ok(call_result) => {
+                        if let Some(cheatcodes) = call_result.cheatcodes.as_ref() {
+                            self.result.add_cheatcodes(cheatcodes.cheatcodes.clone());
+                            self.result.add_files(cheatcodes.files.clone());
+                            self.result.add_envs(cheatcodes.envs.clone());
+                        }
+
                         let reverted = call_result.reverted;
 
                         // Merge tx result traces in unit test result.
