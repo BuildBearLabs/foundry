@@ -44,7 +44,6 @@ pub fn read_to_string(path: impl AsRef<Path>) -> Result<String> {
 
 pub fn read_to_string_with_output(path: impl AsRef<Path>, original_path: String) -> Result<String> {
     let result = locked_read_to_string(&path);
-    let path = path.as_ref();
 
     if let Ok(file) = result.as_ref() {
         let hash = {

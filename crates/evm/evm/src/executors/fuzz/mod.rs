@@ -10,7 +10,6 @@ use foundry_common::sh_println;
 use foundry_config::FuzzConfig;
 use foundry_evm_core::{
     Breakpoints,
-    backend::BackendDatabaseSnapshot,
     constants::{CHEATCODE_ADDRESS, MAGIC_ASSUME},
     decode::{RevertDecoder, SkipReason},
 };
@@ -29,14 +28,12 @@ use proptest::{
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde_json::json;
 use std::{
-    io::{Read, Seek, SeekFrom, Write},
     sync::{
         Arc, OnceLock,
         atomic::{AtomicU32, Ordering},
     },
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
-use uuid::Uuid;
 
 mod types;
 pub use types::{CaseOutcome, CounterExampleOutcome, FuzzOutcome};
