@@ -9,7 +9,6 @@ use foundry_common::sh_println;
 use foundry_config::FuzzConfig;
 use foundry_evm_core::{
     Breakpoints,
-    backend::BackendDatabaseSnapshot,
     constants::{CHEATCODE_ADDRESS, MAGIC_ASSUME},
     decode::{RevertDecoder, SkipReason},
 };
@@ -26,13 +25,7 @@ use proptest::{
     test_runner::{TestCaseError, TestRunner},
 };
 use serde_json::json;
-use std::{
-    cell::RefCell,
-    collections::BTreeMap,
-    io::{Read, Seek, SeekFrom, Write},
-    time::{Instant, SystemTime, UNIX_EPOCH},
-};
-use uuid::Uuid;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 mod types;
 use crate::executors::corpus::CorpusManager;

@@ -6,8 +6,8 @@ use crate::{
     gas_report::GasReport,
 };
 use alloy_primitives::{
-    map::{AddressHashMap, HashMap},
     Address, Log, U256,
+    map::{AddressHashMap, HashMap},
 };
 use eyre::Report;
 use foundry_common::{get_contract_name, get_file_name, shell};
@@ -464,7 +464,7 @@ pub struct TestResult {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize)]
 pub struct CacheDbOther {
     pub accounts: BTreeMap<revm::primitives::Address, DbAccountOther>,
-    pub contracts: BTreeMap<revm::primitives::B256, revm::primitives::Bytecode>,
+    pub contracts: BTreeMap<revm::primitives::B256, revm::bytecode::Bytecode>,
     pub logs: Vec<revm::primitives::Log>,
     pub block_hashes: BTreeMap<revm::primitives::U256, revm::primitives::B256>,
     pub fork: Option<ForkOther>,
@@ -472,13 +472,13 @@ pub struct CacheDbOther {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize)]
 pub struct DbAccountOther {
-    pub info: revm::primitives::AccountInfo,
-    pub account_state: revm::db::AccountState,
+    pub info: revm::state::AccountInfo,
+    pub account_state: revm::database::AccountState,
     pub storage: BTreeMap<U256, U256>,
 }
 
-impl From<revm::db::DbAccount> for DbAccountOther {
-    fn from(account: revm::db::DbAccount) -> Self {
+impl From<revm::database::DbAccount> for DbAccountOther {
+    fn from(account: revm::database::DbAccount) -> Self {
         Self {
             info: account.info,
             account_state: account.account_state,
@@ -842,10 +842,15 @@ impl TestResult {
         match snapshot {
             BackendDatabaseSnapshot::InMemory(cache_db) => {
                 self.db = CacheDbOther {
-                    accounts: cache_db.accounts.into_iter().map(|(x, y)| (x, y.into())).collect(),
-                    contracts: cache_db.contracts.into_iter().collect(),
-                    logs: cache_db.logs,
-                    block_hashes: cache_db.block_hashes.into_iter().collect(),
+                    accounts: cache_db
+                        .cache
+                        .accounts
+                        .into_iter()
+                        .map(|(x, y)| (x, y.into()))
+                        .collect(),
+                    contracts: cache_db.cache.contracts.into_iter().collect(),
+                    logs: cache_db.cache.logs,
+                    block_hashes: cache_db.cache.block_hashes.into_iter().collect(),
                     fork: None,
                 }
             }
@@ -858,10 +863,16 @@ impl TestResult {
                 };
 
                 self.db = CacheDbOther {
-                    accounts: fork.db.accounts.into_iter().map(|(x, y)| (x, y.into())).collect(),
-                    contracts: fork.db.contracts.into_iter().collect(),
-                    logs: fork.db.logs,
-                    block_hashes: fork.db.block_hashes.into_iter().collect(),
+                    accounts: fork
+                        .db
+                        .cache
+                        .accounts
+                        .into_iter()
+                        .map(|(x, y)| (x, y.into()))
+                        .collect(),
+                    contracts: fork.db.cache.contracts.into_iter().collect(),
+                    logs: fork.db.cache.logs,
+                    block_hashes: fork.db.cache.block_hashes.into_iter().collect(),
                     fork: Some(ForkOther { url: fork_url, block_number: fork_block_number }),
                 }
             }

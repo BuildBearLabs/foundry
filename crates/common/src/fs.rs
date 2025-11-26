@@ -1,8 +1,8 @@
 //! Contains various `std::fs` wrapper functions that also contain the target path in their errors.
 
 use crate::errors::FsPathError;
-use flate2::{read::GzDecoder, write::GzEncoder, Compression};
-use serde::{de::DeserializeOwned, Serialize};
+use flate2::{Compression, read::GzDecoder, write::GzEncoder};
+use serde::{Serialize, de::DeserializeOwned};
 use std::{
     fs::{self, File},
     io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write},
@@ -43,8 +43,7 @@ pub fn read_to_string(path: impl AsRef<Path>) -> Result<String> {
 }
 
 pub fn read_to_string_with_output(path: impl AsRef<Path>, original_path: String) -> Result<String> {
-    let result = locked_read_to_string(path);
-    let path = path.as_ref();
+    let result = locked_read_to_string(&path);
 
     if let Ok(file) = result.as_ref() {
         let hash = {

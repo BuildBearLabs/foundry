@@ -3,7 +3,7 @@ use crate::{
     MultiContractRunner, MultiContractRunnerBuilder,
     decode::decode_console_logs,
     gas_report::GasReport,
-    multi_runner::{matches_contract, matches_artifact},
+    multi_runner::matches_artifact,
     result::{DbPrint, ResultPrint, SuiteResult, TestOutcome, TestPrint, TestStatus},
     traces::{
         CallTraceDecoderBuilder, InternalTraceMode, TraceKind,
