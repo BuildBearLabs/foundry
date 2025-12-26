@@ -1591,6 +1591,12 @@ pub enum BackendDatabaseSnapshot {
     Forked(LocalForkId, ForkId, ForkLookupIndex, Box<Fork>),
 }
 
+impl Default for BackendDatabaseSnapshot {
+    fn default() -> Self {
+        Self::InMemory(Default::default())
+    }
+}
+
 /// Represents a fork
 #[derive(Clone, Debug)]
 pub struct Fork {
