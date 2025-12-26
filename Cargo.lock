@@ -9900,6 +9900,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "svm-rs-builds"
+version = "0.5.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1ebe77b200f965e8dbec3ef1d8337e974179ca1ecaa9fc28f67288d6b438159"
+dependencies = [
+ "const-hex",
+ "semver 1.0.27",
+ "serde_json",
+ "svm-rs",
+]
+
+[[package]]
 name = "syn"
 version = "1.0.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"
