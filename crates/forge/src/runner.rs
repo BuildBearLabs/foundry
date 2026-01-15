@@ -581,6 +581,31 @@ impl<'a> FunctionRunner<'a> {
             }
         };
 
+        // @tracing: change the flag to generate a trace exactly like Phoenix does
+        if false {
+            if let Some(_) = self.executor.inspector().inner.tracer.as_ref() {
+                let gas_used = 0; // we don't really need this
+                let config = alloy_rpc_types::trace::geth::CallConfig {
+                    only_top_call: Some(false),
+                    with_log: Some(true),
+                };
+
+                // inspector.traces() are empty by this point, moved to `self.result.traces`
+                let traces = match &self.result.traces[..] {
+                    [first, second] => {
+                        [(first.1.arena.clone(), "setUp"), (second.1.arena.clone(), "test")]
+                    }
+                    _ => panic!("traces for `setUp` and the test are expected"),
+                };
+
+                for (trace, label) in traces {
+                    let trace = foundry_evm::traces::GethTraceBuilder::new(trace.into_nodes())
+                        .geth_call_traces(config, gas_used);
+                    sh_print!("{} trace: {:#?}\n\n", label, trace).unwrap();
+                }
+            }
+        }
+
         let success =
             self.executor.is_raw_call_mut_success(self.address, &mut raw_call_result, false);
         if let Some(cheatcodes) = raw_call_result.cheatcodes.as_ref() {
