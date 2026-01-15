@@ -677,6 +677,7 @@ impl TestArgs {
                         TraceKind::Deployment => false,
                     };
 
+                    // @trace_visualization: here tracer output is passed to the visualization crate
                     if should_include {
                         decode_trace_arena(arena, &decoder).await;
 

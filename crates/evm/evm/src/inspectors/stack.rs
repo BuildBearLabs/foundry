@@ -17,7 +17,7 @@ use foundry_evm_core::{
 };
 use foundry_evm_coverage::HitMaps;
 use foundry_evm_networks::NetworkConfigs;
-use foundry_evm_traces::{SparsedTraceArena, TraceMode};
+use foundry_evm_traces::{SparsedTraceArena, TraceMode, TracingInspectorConfig};
 use revm::{
     Inspector,
     context::{
@@ -496,7 +496,14 @@ impl InspectorStack {
     pub fn tracing(&mut self, mode: TraceMode) {
         self.revert_diag = (!mode.is_none()).then(RevertDiagnostic::default).map(Into::into);
 
-        if let Some(config) = mode.into_config() {
+        if let Some(mut config) = mode.into_config() {
+
+            // @tracing: change the flag to set the tracer config here
+            if false {
+                let call_config = Default::default();
+                config = TracingInspectorConfig::from_geth_call_config(&call_config);
+            }
+
             *self.tracer.get_or_insert_with(Default::default).config_mut() = config;
         } else {
             self.tracer = None;
@@ -537,6 +544,7 @@ impl InspectorStack {
                 },
         } = self;
 
+        // @trace_visualization: here we collect the arenae to be displayed later
         let traces = tracer.map(|tracer| tracer.into_traces()).map(|arena| {
             let ignored = cheatcodes
                 .as_mut()
