@@ -447,7 +447,7 @@ impl<'a> ContractRunner<'a> {
                     identified_contracts.as_ref(),
                 );
                 res.duration = start.elapsed();
-                res.add_db_snapshot(snapshot.clone());
+                res.add_db_snapshot(snapshot.clone(), call_setup);
 
                 // Record test failure for early exit (only triggers if fail-fast is enabled).
                 if res.status.is_failure() {
@@ -556,6 +556,7 @@ impl<'a> FunctionRunner<'a> {
     /// test ends, similar to `eth_call`.
     fn run_unit_test(mut self, func: &Function) -> TestResult {
         // Prepare unit test execution.
+        // TODO: record the preparation step too
         if self.prepare_test(func).is_err() {
             return self.result;
         }
@@ -593,26 +594,23 @@ impl<'a> FunctionRunner<'a> {
                 // inspector.traces() are empty by this point, moved to `self.result.traces`
                 let traces = match &self.result.traces[..] {
                     [first, second] => {
-                        [(first.1.arena.clone(), "setUp"), (second.1.arena.clone(), "test")]
+                        vec![(first.1.arena.clone(), "setUp"), (second.1.arena.clone(), "test")]
                     }
-                    _ => panic!("traces for `setUp` and the test are expected"),
+                    [only] => vec![(only.1.arena.clone(), "test")],
+                    traces => panic!("too many traces: {}", traces.len()), // TODO: there may also be preparation traces, right?
                 };
 
                 for (trace, label) in traces {
                     let trace = foundry_evm::traces::GethTraceBuilder::new(trace.into_nodes())
                         .geth_call_traces(config, gas_used);
-                    sh_print!("{} trace: {:#?}\n\n", label, trace).unwrap();
+                    sh_println!("{} trace: {:#?}\n", label, trace).unwrap();
                 }
             }
         }
 
         let success =
             self.executor.is_raw_call_mut_success(self.address, &mut raw_call_result, false);
-        if let Some(cheatcodes) = raw_call_result.cheatcodes.as_ref() {
-            self.result.add_cheatcodes(cheatcodes.cheatcodes.clone());
-            self.result.add_files(cheatcodes.files.clone());
-            self.result.add_envs(cheatcodes.envs.clone());
-        }
+        self.result.add_cheatcodes(&raw_call_result.cheatcodes);
         self.result.single_result(success, reason, raw_call_result);
         self.result.add_test(self.sender, self.address, func.selector().to_vec(), U256::ZERO);
         self.result
@@ -1075,6 +1073,7 @@ impl<'a> FunctionRunner<'a> {
             }
         }
 
+        self.result.add_cheatcodes(&fuzzed_executor.executor.inspector().cheatcodes);
         self.result.fuzz_result(result);
         self.result
     }
@@ -1106,12 +1105,6 @@ impl<'a> FunctionRunner<'a> {
                     U256::ZERO,
                 ) {
                     Ok(call_result) => {
-                        if let Some(cheatcodes) = call_result.cheatcodes.as_ref() {
-                            self.result.add_cheatcodes(cheatcodes.cheatcodes.clone());
-                            self.result.add_files(cheatcodes.files.clone());
-                            self.result.add_envs(cheatcodes.envs.clone());
-                        }
-
                         let reverted = call_result.reverted;
 
                         // Merge tx result traces in unit test result.

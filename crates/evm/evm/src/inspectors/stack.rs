@@ -497,7 +497,6 @@ impl InspectorStack {
         self.revert_diag = (!mode.is_none()).then(RevertDiagnostic::default).map(Into::into);
 
         if let Some(mut config) = mode.into_config() {
-
             // @tracing: change the flag to set the tracer config here
             if false {
                 let call_config = Default::default();

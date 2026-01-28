@@ -160,7 +160,7 @@ impl SharedFuzzState {
 /// configuration which can be overridden via [environment variables](proptest::test_runner::Config)
 pub struct FuzzedExecutor {
     /// The EVM executor.
-    executor_f: Executor,
+    pub executor_f: Executor,
     /// The fuzzer
     runner: TestRunner,
     /// The account that calls tests.
@@ -241,7 +241,6 @@ impl FuzzedExecutor {
         address: Address,
         calldata: Bytes,
         coverage_metrics: &mut WorkerCorpus,
-        func: &Function,
     ) -> Result<FuzzOutcome, TestCaseError> {
         let mut call = executor
             .call_raw(self.sender, address, calldata.clone(), U256::ZERO)
@@ -524,7 +523,7 @@ impl FuzzedExecutor {
             };
 
             worker.last_run_timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
-            match self.single_fuzz(&executor, address, input, &mut corpus, func) {
+            match self.single_fuzz(&executor, address, input, &mut corpus) {
                 Ok(fuzz_outcome) => match fuzz_outcome {
                     FuzzOutcome::Case(case) => {
                         let total_runs = inc_runs();
