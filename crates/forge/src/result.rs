@@ -18,6 +18,7 @@ use foundry_evm::{
     decode::SkipReason,
     executors::{RawCallResult, invariant::InvariantMetrics},
     fuzz::{CounterExample, FuzzCase, FuzzFixtures, FuzzTestResult},
+    inspectors::Cheatcodes,
     traces::{CallTraceArena, CallTraceDecoder, TraceKind, Traces},
 };
 use serde::{Deserialize, Serialize};
@@ -468,6 +469,7 @@ pub struct CacheDbOther {
     pub logs: Vec<revm::primitives::Log>,
     pub block_hashes: BTreeMap<revm::primitives::U256, revm::primitives::B256>,
     pub fork: Option<ForkOther>,
+    pub call_setup: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize)]
@@ -838,7 +840,7 @@ impl TestResult {
         HitMaps::merge_opt(&mut self.line_coverage, other_coverage);
     }
 
-    pub fn add_db_snapshot(&mut self, snapshot: BackendDatabaseSnapshot) {
+    pub fn add_db_snapshot(&mut self, snapshot: BackendDatabaseSnapshot, call_setup: bool) {
         match snapshot {
             BackendDatabaseSnapshot::InMemory(cache_db) => {
                 self.db = CacheDbOther {
@@ -852,6 +854,7 @@ impl TestResult {
                     logs: cache_db.cache.logs,
                     block_hashes: cache_db.cache.block_hashes.into_iter().collect(),
                     fork: None,
+                    call_setup,
                 }
             }
             BackendDatabaseSnapshot::Forked(_, fork_id, _, fork) => {
@@ -874,6 +877,7 @@ impl TestResult {
                     logs: fork.db.cache.logs,
                     block_hashes: fork.db.cache.block_hashes.into_iter().collect(),
                     fork: Some(ForkOther { url: fork_url, block_number: fork_block_number }),
+                    call_setup,
                 }
             }
         }
@@ -883,16 +887,12 @@ impl TestResult {
         self.test = Some(Test { from, to, input, value })
     }
 
-    pub fn add_cheatcodes(&mut self, cheatcodes: Set<String>) {
-        self.cheatcodes = cheatcodes;
-    }
-
-    pub fn add_files(&mut self, files: Map<String, String>) {
-        self.files = files;
-    }
-
-    pub fn add_envs(&mut self, envs: Map<String, String>) {
-        self.envs = envs;
+    pub fn add_cheatcodes(&mut self, cheatcodes: &Option<Box<Cheatcodes>>) {
+        if let Some(cheatcodes) = cheatcodes {
+            self.cheatcodes.extend(cheatcodes.cheatcodes.clone());
+            self.files.extend(cheatcodes.files.clone());
+            self.envs.extend(cheatcodes.envs.clone());
+        }
     }
 }
 

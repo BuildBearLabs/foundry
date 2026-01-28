@@ -65,7 +65,7 @@ struct FuzzTestData {
 /// configuration which can be overridden via [environment variables](proptest::test_runner::Config)
 pub struct FuzzedExecutor {
     /// The EVM executor.
-    executor: Executor,
+    pub executor: Executor,
     /// The fuzzer
     runner: TestRunner,
     /// The account that calls tests.

@@ -27,6 +27,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use walkdir::WalkDir;
+use hex::ToHexExt;
 
 impl Cheatcode for existsCall {
     fn apply(&self, state: &mut Cheatcodes) -> Result {
@@ -154,7 +155,10 @@ impl Cheatcode for readFileCall {
         let original_path = path.clone();
         let path = state.config.ensure_path_allowed(path, FsAccessKind::Read)?;
         let result = fs::read_to_string(path)?;
+
+        // remember the file
         state.files.insert(original_path, result.clone());
+
         Ok(result.abi_encode())
     }
 }
@@ -162,8 +166,14 @@ impl Cheatcode for readFileCall {
 impl Cheatcode for readFileBinaryCall {
     fn apply(&self, state: &mut Cheatcodes) -> Result {
         let Self { path } = self;
+        let original_path = path.clone();
         let path = state.config.ensure_path_allowed(path, FsAccessKind::Read)?;
-        Ok(fs::locked_read(path)?.abi_encode())
+        let result = fs::locked_read(path)?;
+
+        // remember the file
+        state.files.insert(original_path, format!("0x{}", result.clone().encode_hex()));
+
+        Ok(result.abi_encode())
     }
 }
 
