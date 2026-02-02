@@ -521,6 +521,8 @@ pub struct Cheatcodes {
     pub cheatcodes: Set<String>,
     // Files accessed
     pub files: Map<String, String>,
+    // Deployed code accessed
+    pub deployed_bytecode: Map<String, String>,
     // Envs accessed
     pub envs: Map<String, String>,
 }
@@ -584,6 +586,7 @@ impl Cheatcodes {
 
             cheatcodes: Default::default(),
             files: Default::default(),
+            deployed_bytecode: Default::default(),
             envs: Default::default(),
         }
     }

@@ -304,7 +304,12 @@ impl Cheatcode for getCodeCall {
 impl Cheatcode for getDeployedCodeCall {
     fn apply(&self, state: &mut Cheatcodes) -> Result {
         let Self { artifactPath: path } = self;
-        Ok(get_artifact_code(state, path, true)?.abi_encode())
+        let result = get_artifact_code(state, path, true)?;
+
+        // remember the code
+        state.deployed_bytecode.insert(path.to_string(), format!("0x{}", result.encode_hex()));
+
+        Ok(result.abi_encode())
     }
 }
 
