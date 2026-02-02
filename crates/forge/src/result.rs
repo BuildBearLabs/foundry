@@ -457,6 +457,9 @@ pub struct TestResult {
     /// Files accessed
     #[serde(skip)]
     pub files: Map<String, String>,
+    /// Deployed bytecode accessed
+    #[serde(skip)]
+    pub deployed_bytecode: Map<String, String>,
     /// Envs accessed
     #[serde(skip)]
     pub envs: Map<String, String>,
@@ -516,6 +519,7 @@ pub struct TestPrint {
     pub decoded_logs: Vec<String>,
     pub cheatcodes: Set<String>,
     pub files: Set<String>,
+    pub deployed_code: Set<String>,
     pub envs: Set<String>,
 }
 
@@ -530,6 +534,7 @@ pub struct ResultPrint {
     pub data: Vec<DbPrint>,
     pub cheatcodes: Set<String>,
     pub files: Map<String, String>,
+    pub deployed_code: Map<String, String>,
     pub envs: Map<String, String>,
 }
 
@@ -892,6 +897,7 @@ impl TestResult {
             self.cheatcodes.extend(cheatcodes.cheatcodes.clone());
             self.files.extend(cheatcodes.files.clone());
             self.envs.extend(cheatcodes.envs.clone());
+            self.deployed_bytecode.extend(cheatcodes.deployed_bytecode.clone());
         }
     }
 }

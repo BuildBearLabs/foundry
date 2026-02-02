@@ -597,7 +597,7 @@ impl<'a> FunctionRunner<'a> {
                         vec![(first.1.arena.clone(), "setUp"), (second.1.arena.clone(), "test")]
                     }
                     [only] => vec![(only.1.arena.clone(), "test")],
-                    traces => panic!("too many traces: {}", traces.len()),  // TODO: there may also be preparation traces, right?
+                    traces => panic!("too many traces: {}", traces.len()), // TODO: there may also be preparation traces, right?
                 };
 
                 for (trace, label) in traces {

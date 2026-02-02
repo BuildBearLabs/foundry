@@ -566,6 +566,7 @@ impl TestArgs {
         let mut printable_result: HashMap<_, Vec<_>> = HashMap::new();
         let mut cheatcodes = HashSet::new();
         let mut files = HashMap::new();
+        let mut deployed_code = HashMap::new();
         let mut envs = HashMap::new();
 
         let mut any_test_failed = false;
@@ -611,10 +612,13 @@ impl TestArgs {
                     decoded_logs: result.decoded_logs.clone(),
                     cheatcodes: result.cheatcodes.clone(),
                     files: result.files.keys().cloned().collect(),
+                    deployed_code: result.deployed_bytecode.keys().cloned().collect(),
                     envs: result.envs.keys().cloned().collect(),
                 });
                 cheatcodes.extend(result.cheatcodes.iter().cloned());
                 files.extend(result.files.iter().map(|(k, v)| (k.clone(), v.clone())));
+                deployed_code
+                    .extend(result.deployed_bytecode.iter().map(|(k, v)| (k.clone(), v.clone())));
                 envs.extend(result.envs.iter().map(|(k, v)| (k.clone(), v.clone())));
 
                 let show_traces =
@@ -854,7 +858,7 @@ impl TestArgs {
 
             let data =
                 printable_result.into_iter().map(|(db, tests)| DbPrint { db, tests }).collect();
-            let result = ResultPrint { data, cheatcodes, files, envs };
+            let result = ResultPrint { data, cheatcodes, files, deployed_code, envs };
             let result = serde_json::to_vec_pretty(&result).unwrap();
 
             let mut file =

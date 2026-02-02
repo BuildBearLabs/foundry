@@ -12,6 +12,7 @@ use dialoguer::{Input, Password};
 use forge_script_sequence::{BroadcastReader, TransactionWithMetadata};
 use foundry_common::fs;
 use foundry_config::fs_permissions::FsAccessKind;
+use hex::ToHexExt;
 use revm::{
     context::{CreateScheme, JournalTr},
     interpreter::CreateInputs,
@@ -27,7 +28,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use walkdir::WalkDir;
-use hex::ToHexExt;
 
 impl Cheatcode for existsCall {
     fn apply(&self, state: &mut Cheatcodes) -> Result {
@@ -304,7 +304,12 @@ impl Cheatcode for getCodeCall {
 impl Cheatcode for getDeployedCodeCall {
     fn apply(&self, state: &mut Cheatcodes) -> Result {
         let Self { artifactPath: path } = self;
-        Ok(get_artifact_code(state, path, true)?.abi_encode())
+        let result = get_artifact_code(state, path, true)?;
+
+        // remember the code
+        state.deployed_bytecode.insert(path.to_string(), format!("0x{}", result.encode_hex()));
+
+        Ok(result.abi_encode())
     }
 }
 
