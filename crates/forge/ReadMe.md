@@ -1,3 +1,13 @@
+# Running forge tests with Phoenix
+
+Phoenix doesn't allow direct interaction with the EVM, only transactions, so a kind of compatibility layer is required to port the test. This fork's aim is to generate a `bbOut.json` file for any test run; it contains all the info necessary to reproduce the test:
+- initial blockchain state & test data (under the `data` key, `db` and `test` respectively);
+- a list of all cheatcodes being used for the run;
+- all external data being used by the cheatcodes (e.g. files and envs).
+
+**N.B.** Phoenix cheatcodes affect only one transaction / call, so all test steps must be wrapped into a single transaction / call
+
+
 # Tracers compatibility
 
 ## Phoenix tracers for forge
