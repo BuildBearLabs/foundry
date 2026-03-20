@@ -1073,7 +1073,7 @@ impl<'a> FunctionRunner<'a> {
             }
         }
 
-        self.result.add_cheatcodes(&fuzzed_executor.executor.inspector().cheatcodes);
+        self.result.add_cheatcodes(&fuzzed_executor.executor_f.inspector().cheatcodes);
         self.result.fuzz_result(result);
         self.result
     }
