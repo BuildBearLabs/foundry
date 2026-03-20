@@ -66,7 +66,7 @@ use revm::{
 use serde_json::Value;
 use std::{
     cmp::max,
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, HashMap as Map, HashSet as Set, VecDeque},
     fs::File,
     io::BufReader,
     ops::Range,
@@ -516,6 +516,15 @@ pub struct Cheatcodes {
     pub dynamic_gas_limit: bool,
     // Custom execution evm version.
     pub execution_evm_version: Option<SpecId>,
+
+    // Cheatcodes accessed
+    pub cheatcodes: Set<String>,
+    // Files accessed
+    pub files: Map<String, String>,
+    // Deployed code accessed
+    pub deployed_bytecode: Map<String, String>,
+    // Envs accessed
+    pub envs: Map<String, String>,
 }
 
 // This is not derived because calling this in `fn new` with `..Default::default()` creates a second
@@ -574,6 +583,11 @@ impl Cheatcodes {
             signatures_identifier: Default::default(),
             dynamic_gas_limit: Default::default(),
             execution_evm_version: None,
+
+            cheatcodes: Default::default(),
+            files: Default::default(),
+            deployed_bytecode: Default::default(),
+            envs: Default::default(),
         }
     }
 
@@ -2514,6 +2528,8 @@ fn apply_dispatch(
     executor: &mut dyn CheatcodesExecutor,
 ) -> Result {
     let cheat = calls_as_dyn_cheatcode(calls);
+
+    ccx.state.cheatcodes.insert(cheat.signature().to_string());
 
     let _guard = debug_span!(target: "cheatcodes", "apply", id = %cheat.id()).entered();
     trace!(target: "cheatcodes", ?cheat, "applying");

@@ -160,7 +160,7 @@ impl SharedFuzzState {
 /// configuration which can be overridden via [environment variables](proptest::test_runner::Config)
 pub struct FuzzedExecutor {
     /// The EVM executor.
-    executor_f: Executor,
+    pub executor_f: Executor,
     /// The fuzzer
     runner: TestRunner,
     /// The account that calls tests.

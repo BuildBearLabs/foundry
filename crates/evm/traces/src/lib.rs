@@ -376,6 +376,7 @@ impl TraceMode {
         }
     }
 
+    // @trace_visualization: forge tracer config is generated here
     pub fn into_config(self) -> Option<TracingInspectorConfig> {
         if self.is_none() {
             None

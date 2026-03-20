@@ -710,7 +710,7 @@ impl Backend {
     }
 
     /// Creates a snapshot of the currently active database
-    pub(crate) fn create_db_snapshot(&self) -> BackendDatabaseSnapshot {
+    pub fn create_db_snapshot(&self) -> BackendDatabaseSnapshot {
         if let Some((id, idx)) = self.active_fork_ids {
             let fork = self.inner.get_fork(idx).clone();
             let fork_id = self.inner.ensure_fork_id(id).cloned().expect("Exists; qed");
@@ -1591,10 +1591,16 @@ pub enum BackendDatabaseSnapshot {
     Forked(LocalForkId, ForkId, ForkLookupIndex, Box<Fork>),
 }
 
+impl Default for BackendDatabaseSnapshot {
+    fn default() -> Self {
+        Self::InMemory(Default::default())
+    }
+}
+
 /// Represents a fork
 #[derive(Clone, Debug)]
 pub struct Fork {
-    db: ForkDB,
+    pub db: ForkDB,
     journaled_state: JournaledState,
 }
 

@@ -67,6 +67,7 @@ impl BasicTxDetails {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[expect(clippy::large_enum_variant)]
+#[serde(tag = "type", content = "details", rename_all = "lowercase")]
 pub enum CounterExample {
     /// Call used as a counter example for fuzz tests.
     Single(BaseCounterExample),

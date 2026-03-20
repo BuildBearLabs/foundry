@@ -4,7 +4,7 @@ use crate::{
     decode::decode_console_logs,
     gas_report::GasReport,
     multi_runner::matches_artifact,
-    result::{SuiteResult, TestOutcome, TestStatus},
+    result::{DbPrint, ResultPrint, SuiteResult, TestOutcome, TestPrint, TestStatus},
     traces::{
         CallTraceDecoderBuilder, InternalTraceMode, TraceKind,
         debug::{ContractSources, DebugTraceIdentifier},
@@ -45,7 +45,7 @@ use foundry_evm::{
 };
 use regex::Regex;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::Write,
     path::{Path, PathBuf},
     sync::{Arc, mpsc::channel},
@@ -567,6 +567,12 @@ impl TestArgs {
 
         let mut outcome = TestOutcome::empty(None, self.allow_failure);
 
+        let mut printable_result: HashMap<_, Vec<_>> = HashMap::new();
+        let mut cheatcodes = HashSet::new();
+        let mut files = HashMap::new();
+        let mut deployed_code = HashMap::new();
+        let mut envs = HashMap::new();
+
         let mut any_test_failed = false;
         let mut backtrace_builder = None;
         for (contract_name, mut suite_result) in rx {
@@ -598,6 +604,27 @@ impl TestArgs {
 
             // Process individual test results, printing logs and traces when necessary.
             for (name, result) in tests {
+                printable_result.entry(result.db.clone()).or_default().push(TestPrint {
+                    contract_name: contract_name.clone(),
+                    name: name.clone(),
+                    status: result.status,
+                    kind: result.kind.clone(),
+                    test: result.test.clone(),
+                    reason: result.reason.clone(),
+                    counterexample: result.counterexample.clone(),
+                    logs: result.logs.clone(),
+                    decoded_logs: result.decoded_logs.clone(),
+                    cheatcodes: result.cheatcodes.clone(),
+                    files: result.files.keys().cloned().collect(),
+                    deployed_code: result.deployed_bytecode.keys().cloned().collect(),
+                    envs: result.envs.keys().cloned().collect(),
+                });
+                cheatcodes.extend(result.cheatcodes.iter().cloned());
+                files.extend(result.files.iter().map(|(k, v)| (k.clone(), v.clone())));
+                deployed_code
+                    .extend(result.deployed_bytecode.iter().map(|(k, v)| (k.clone(), v.clone())));
+                envs.extend(result.envs.iter().map(|(k, v)| (k.clone(), v.clone())));
+
                 let show_traces =
                     !self.suppress_successful_traces || result.status == TestStatus::Failure;
                 if !silent {
@@ -654,6 +681,7 @@ impl TestArgs {
                         TraceKind::Deployment => false,
                     };
 
+                    // @trace_visualization: here tracer output is passed to the visualization crate
                     if should_include {
                         decode_trace_arena(arena, &decoder).await;
 
@@ -833,6 +861,22 @@ impl TestArgs {
         }
         outcome.last_run_decoder = Some(decoder);
         let duration = timer.elapsed();
+
+        {
+            use std::io::{Seek, SeekFrom, Write};
+
+            let data =
+                printable_result.into_iter().map(|(db, tests)| DbPrint { db, tests }).collect();
+            let result = ResultPrint { data, cheatcodes, files, deployed_code, envs };
+            let result = serde_json::to_vec_pretty(&result).unwrap();
+
+            let mut file =
+                std::fs::OpenOptions::new().create(true).write(true).open("bbOut.json").unwrap();
+
+            file.seek(SeekFrom::Start(0)).unwrap();
+            file.set_len(0).unwrap();
+            file.write_all(&result).unwrap();
+        }
 
         trace!(target: "forge::test", len=outcome.results.len(), %any_test_failed, "done with results");
 

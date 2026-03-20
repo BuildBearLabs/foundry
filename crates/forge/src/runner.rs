@@ -16,6 +16,7 @@ use foundry_common::{TestFunctionExt, TestFunctionKind, contracts::ContractsByAd
 use foundry_compilers::utils::canonicalized;
 use foundry_config::{Config, FuzzCorpusConfig};
 use foundry_evm::{
+    backend::BackendDatabaseSnapshot,
     constants::CALLER,
     decode::RevertDecoder,
     executors::{
@@ -106,17 +107,18 @@ impl<'a> ContractRunner<'a> {
 
     /// Deploys the test contract inside the runner from the sending account, and optionally runs
     /// the `setUp` function on the test contract.
-    pub fn setup(&mut self, call_setup: bool) -> TestSetup {
+    pub fn setup(&mut self, call_setup: bool) -> (TestSetup, BackendDatabaseSnapshot) {
+        // TODO: create a snapshot even on setup failure
         self._setup(call_setup).unwrap_or_else(|err| {
             if err.to_string().contains("skipped") {
-                TestSetup::skipped(err.to_string())
+                (TestSetup::skipped(err.to_string()), Default::default())
             } else {
-                TestSetup::failed(err.to_string())
+                (TestSetup::failed(err.to_string()), Default::default())
             }
         })
     }
 
-    fn _setup(&mut self, call_setup: bool) -> Result<TestSetup> {
+    fn _setup(&mut self, call_setup: bool) -> Result<(TestSetup, BackendDatabaseSnapshot)> {
         trace!(call_setup, "setting up");
 
         self.apply_contract_inline_config()?;
@@ -150,7 +152,7 @@ impl<'a> ContractRunner<'a> {
             if reason.is_some() {
                 debug!(?reason, "deployment of library failed");
                 result.reason = reason;
-                return Ok(result);
+                return Ok((result, Default::default()));
             }
         }
 
@@ -179,7 +181,7 @@ impl<'a> ContractRunner<'a> {
         if reason.is_some() {
             debug!(?reason, "deployment of test contract failed");
             result.reason = reason;
-            return Ok(result);
+            return Ok((result, Default::default()));
         }
 
         // Reset `self.sender`s, `CALLER`s and `LIBRARY_DEPLOYER`'s balance to the initial balance.
@@ -188,6 +190,9 @@ impl<'a> ContractRunner<'a> {
         self.executor.set_balance(LIBRARY_DEPLOYER, self.initial_balance())?;
 
         self.executor.deploy_create2_deployer()?;
+
+        // snapshot the db state before running the setUp function
+        let snapshot = self.executor.backend().create_db_snapshot();
 
         // Optionally call the `setUp` function
         if call_setup {
@@ -198,9 +203,10 @@ impl<'a> ContractRunner<'a> {
             result.reason = reason;
         }
 
+        // TODO: should it be included in the snapshot?
         result.fuzz_fixtures = self.fuzz_fixtures(address);
 
-        Ok(result)
+        Ok((result, snapshot))
     }
 
     fn initial_balance(&self) -> U256 {
@@ -347,7 +353,7 @@ impl<'a> ContractRunner<'a> {
         }
 
         let setup_time = Instant::now();
-        let setup = self.setup(call_setup);
+        let (setup, snapshot) = self.setup(call_setup);
         debug!("finished setting up in {:?}", setup_time.elapsed());
 
         self.executor.inspector_mut().tracer = prev_tracer;
@@ -441,6 +447,7 @@ impl<'a> ContractRunner<'a> {
                     identified_contracts.as_ref(),
                 );
                 res.duration = start.elapsed();
+                res.add_db_snapshot(snapshot.clone(), call_setup);
 
                 // Record test failure for early exit (only triggers if fail-fast is enabled).
                 if res.status.is_failure() {
@@ -549,6 +556,7 @@ impl<'a> FunctionRunner<'a> {
     /// test ends, similar to `eth_call`.
     fn run_unit_test(mut self, func: &Function) -> TestResult {
         // Prepare unit test execution.
+        // TODO: record the preparation step too
         if self.prepare_test(func).is_err() {
             return self.result;
         }
@@ -574,9 +582,37 @@ impl<'a> FunctionRunner<'a> {
             }
         };
 
+        // @tracing: change the flag to generate a trace exactly like Phoenix does
+        if false {
+            if let Some(_) = self.executor.inspector().inner.tracer.as_ref() {
+                let gas_used = 0; // we don't really need this
+                let config = alloy_rpc_types::trace::geth::CallConfig {
+                    only_top_call: Some(false),
+                    with_log: Some(true),
+                };
+
+                // inspector.traces() are empty by this point, moved to `self.result.traces`
+                let traces = match &self.result.traces[..] {
+                    [first, second] => {
+                        vec![(first.1.arena.clone(), "setUp"), (second.1.arena.clone(), "test")]
+                    }
+                    [only] => vec![(only.1.arena.clone(), "test")],
+                    traces => panic!("too many traces: {}", traces.len()), // TODO: there may also be preparation traces, right?
+                };
+
+                for (trace, label) in traces {
+                    let trace = foundry_evm::traces::GethTraceBuilder::new(trace.into_nodes())
+                        .geth_call_traces(config, gas_used);
+                    sh_println!("{} trace: {:#?}\n", label, trace).unwrap();
+                }
+            }
+        }
+
         let success =
             self.executor.is_raw_call_mut_success(self.address, &mut raw_call_result, false);
+        self.result.add_cheatcodes(&raw_call_result.cheatcodes);
         self.result.single_result(success, reason, raw_call_result);
+        self.result.add_test(self.sender, self.address, func.selector().to_vec(), U256::ZERO);
         self.result
     }
 
@@ -1037,6 +1073,7 @@ impl<'a> FunctionRunner<'a> {
             }
         }
 
+        self.result.add_cheatcodes(&fuzzed_executor.executor_f.inspector().cheatcodes);
         self.result.fuzz_result(result);
         self.result
     }

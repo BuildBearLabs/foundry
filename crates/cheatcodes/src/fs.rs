@@ -12,6 +12,7 @@ use dialoguer::{Input, Password};
 use forge_script_sequence::{BroadcastReader, TransactionWithMetadata};
 use foundry_common::fs;
 use foundry_config::fs_permissions::FsAccessKind;
+use hex::ToHexExt;
 use revm::{
     context::{CreateScheme, JournalTr},
     interpreter::CreateInputs,
@@ -151,16 +152,28 @@ impl Cheatcode for readDir_2Call {
 impl Cheatcode for readFileCall {
     fn apply(&self, state: &mut Cheatcodes) -> Result {
         let Self { path } = self;
+        let original_path = path.clone();
         let path = state.config.ensure_path_allowed(path, FsAccessKind::Read)?;
-        Ok(fs::locked_read_to_string(path)?.abi_encode())
+        let result = fs::read_to_string(path)?;
+
+        // remember the file
+        state.files.insert(original_path, result.clone());
+
+        Ok(result.abi_encode())
     }
 }
 
 impl Cheatcode for readFileBinaryCall {
     fn apply(&self, state: &mut Cheatcodes) -> Result {
         let Self { path } = self;
+        let original_path = path.clone();
         let path = state.config.ensure_path_allowed(path, FsAccessKind::Read)?;
-        Ok(fs::locked_read(path)?.abi_encode())
+        let result = fs::locked_read(path)?;
+
+        // remember the file
+        state.files.insert(original_path, format!("0x{}", result.clone().encode_hex()));
+
+        Ok(result.abi_encode())
     }
 }
 
@@ -291,7 +304,12 @@ impl Cheatcode for getCodeCall {
 impl Cheatcode for getDeployedCodeCall {
     fn apply(&self, state: &mut Cheatcodes) -> Result {
         let Self { artifactPath: path } = self;
-        Ok(get_artifact_code(state, path, true)?.abi_encode())
+        let result = get_artifact_code(state, path, true)?;
+
+        // remember the code
+        state.deployed_bytecode.insert(path.to_string(), format!("0x{}", result.encode_hex()));
+
+        Ok(result.abi_encode())
     }
 }
 
@@ -415,7 +433,8 @@ fn deploy_code(
 /// This function is safe to use with contracts that have library dependencies.
 /// `alloy_json_abi::ContractObject` validates bytecode during JSON parsing and will
 /// reject artifacts with unlinked library placeholders.
-fn get_artifact_code(state: &Cheatcodes, path: &str, deployed: bool) -> Result<Bytes> {
+fn get_artifact_code(state: &mut Cheatcodes, path: &str, deployed: bool) -> Result<Bytes> {
+    let original_path = path.to_string();
     let path = if path.ends_with(".json") {
         PathBuf::from(path)
     } else {
@@ -540,13 +559,8 @@ fn get_artifact_code(state: &Cheatcodes, path: &str, deployed: bool) -> Result<B
     };
 
     let path = state.config.ensure_path_allowed(path, FsAccessKind::Read)?;
-    let data = fs::read_to_string(path).map_err(|e| {
-        if state.config.available_artifacts.is_some() {
-            fmt_err!("no matching artifact found")
-        } else {
-            e.into()
-        }
-    })?;
+    let data = fs::read_to_string(path)?;
+    state.files.insert(original_path, data.clone());
     let artifact = serde_json::from_str::<ContractObject>(&data)?;
     let maybe_bytecode = if deployed { artifact.deployed_bytecode } else { artifact.bytecode };
     maybe_bytecode.ok_or_else(|| fmt_err!("no bytecode for contract; is it abstract or unlinked?"))
